@@ -43,22 +43,40 @@ class Raven_Serializer
      *
      * @var string
      */
-    private $mb_detect_order= self::DEFAULT_MB_DETECT_ORDER;
+    protected $mb_detect_order = self::DEFAULT_MB_DETECT_ORDER;
+
+    /**
+     * The default maximum message lengths. Longer strings will be truncated
+     *
+     * @var int
+     */
+    protected $message_limit = Raven_Client::MESSAGE_LIMIT;
 
     /**
      * @param null|string $mb_detect_order
+     * @param null|int    $message_limit
      */
-    public function __construct($mb_detect_order = null)
+    public function __construct($mb_detect_order = null, $message_limit = null)
     {
         if ($mb_detect_order != null) {
             $this->mb_detect_order = $mb_detect_order;
         }
+
+        if ($message_limit != null) {
+            $this->message_limit = (int) $message_limit;
+        }
     }
+
     /**
      * Serialize an object (recursively) into something safe for data
      * sanitization and encoding.
+     *
+     * @param mixed $value
+     * @param int   $max_depth
+     * @param int   $_depth
+     * @return string|bool|double|int|null|object|array
      */
-    public function serialize($value, $max_depth=3, $_depth=0)
+    public function serialize($value, $max_depth = 3, $_depth = 0)
     {
         $className = is_object($value) ? get_class($value) : null;
         $toArray = is_array($value) || $className === 'stdClass';
@@ -76,24 +94,32 @@ class Raven_Serializer
     protected function serializeString($value)
     {
         $value = (string) $value;
-        if (function_exists('mb_detect_encoding')
-            && function_exists('mb_convert_encoding')
-        ) {
+
+        // Check if mbstring extension is loaded
+        if (extension_loaded('mbstring')) {
             // we always guarantee this is coerced, even if we can't detect encoding
             if ($currentEncoding = mb_detect_encoding($value, $this->mb_detect_order)) {
                 $value = mb_convert_encoding($value, 'UTF-8', $currentEncoding);
             } else {
                 $value = mb_convert_encoding($value, 'UTF-8');
             }
-        }
 
-        if (strlen($value) > 1024) {
-            $value = substr($value, 0, 1014) . ' {clipped}';
+            if ($this->message_limit !== 0 && mb_strlen($value) > $this->message_limit) {
+                $value = mb_substr($value, 0, $this->message_limit - 10, 'UTF-8') . ' {clipped}';
+            }
+        } else {
+            if ($this->message_limit !== 0 && strlen($value) > $this->message_limit) {
+                $value = substr($value, 0, $this->message_limit - 10) . ' {clipped}';
+            }
         }
 
         return $value;
     }
 
+    /**
+     * @param mixed $value
+     * @return string|bool|double|int|null
+     */
     protected function serializeValue($value)
     {
         if (is_null($value) || is_bool($value) || is_float($value) || is_integer($value)) {
@@ -112,6 +138,7 @@ class Raven_Serializer
 
     /**
      * @return string
+     * @codeCoverageIgnore
      */
     public function getMbDetectOrder()
     {
@@ -122,11 +149,30 @@ class Raven_Serializer
      * @param string $mb_detect_order
      *
      * @return Raven_Serializer
+     * @codeCoverageIgnore
      */
     public function setMbDetectOrder($mb_detect_order)
     {
         $this->mb_detect_order = $mb_detect_order;
 
         return $this;
+    }
+
+    /**
+     * @return int
+     * @codeCoverageIgnore
+     */
+    public function getMessageLimit()
+    {
+        return $this->message_limit;
+    }
+
+    /**
+     * @param int $message_limit
+     * @codeCoverageIgnore
+     */
+    public function setMessageLimit($message_limit)
+    {
+        $this->message_limit = (int)$message_limit;
     }
 }
